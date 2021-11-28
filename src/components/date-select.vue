@@ -2,6 +2,7 @@
 继续：
 * 兼容mosemove 事件和 touchmove 事件共存
 * 选择日期后发出事件，更新oldY\oldM\oldD
+* 选择月份时候，对天数的处理，比如3月有30天，假如切换到了2月，那么天数显示为几号？1还是28？
 -->
 <template>
   <div class="component-dateselect">
