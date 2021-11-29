@@ -120,7 +120,7 @@ export default {
       const MTK = 'column' + ['Y', 'M', 'D'][index] + 'EleMT';
       const SK = ['years', 'months', 'days'][index];
       const ISTK = 'isStartTouch' + ['Y', 'M', 'D'][index];
-      const onTouchstartOrMounsedown  = e => {
+      const onTouchstartOrMounsedown = e => {
         this[ISTK] = true;
         const y = this.getYFromEvent(e);
         start = prev = y;
@@ -174,20 +174,49 @@ export default {
         !this[ISTK] && this.animationToPosition(MTK, ISTK, columnIn, space, 5, () => {
           console.log("end！！！");
         });
-      }
+      };
+
+      const onPcMouseup = e => {
+        console.error("fuck");
+        onTouchendOrMouseup(e);
+        column.onmousemove = null;
+        document.removeEventListener("mouseup", onPcMouseup);
+      };
+
+      /**
+       * 移动端事件
+       */
       column.addEventListener("touchstart", onTouchstartOrMounsedown);
-      // column.addEventListener("mousedown", () => {
-      //   column.onmousemove = onTouchmoveOrMousemove;
-      // });
       column.addEventListener("touchmove", onTouchmoveOrMousemove);
-      // column.addEventListener("mouseup", e => {
-      //   column.onmousemove = null;
-      //   onTouchendOrMouseup(e);
-      // });
       column.addEventListener("touchend", onTouchendOrMouseup);
+
+      /**
+       * pc端事件
+       */
+      column.onmousedown = e => {
+        onTouchstartOrMounsedown(e);
+        column.onmousemove = onTouchmoveOrMousemove;
+        document.addEventListener("mouseup", onPcMouseup);
+      };
+      column.onmouseup = e => {
+        e.stopPropagation();
+        onTouchendOrMouseup(e);
+        column.onmousemove = null;
+      };
     },
     getYFromEvent (e) {
-      return e.screenY || e?.changedTouches[0]?.screenY;
+      if (e.screenY) {
+        console.log("pc>>");
+        const _ = e.screenY;
+        console.log(_);
+        return _;
+      } else {
+        console.log("mobile>>");
+        const _ = e?.changedTouches[0].screenY;
+        console.log(_);
+        return _;
+      }
+      // return e.screenY || e?.changedTouches[0]?.screenY;
     },
     animationToPosition (MTK, ISTK, ele, space = 0, _ = 5, cb = () => {}) {
       requestAnimationFrame(() => {
