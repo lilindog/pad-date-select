@@ -410,7 +410,7 @@ export default {
   --popup-btnwrap-height: 64px;
   --select-line-color: rgba(42,178,255,.8);
 
-  background: red;
+  /*background: red;*/
   display: inline-block;
   position: relative;
 }
