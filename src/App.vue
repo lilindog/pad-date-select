@@ -1,7 +1,7 @@
 <template>
   <div class="app">
     <button @click="test">test</button>
-    <date-select :value="date">
+    <date-select :value="date" @change="onChange">
 <!--    <date-select>-->
       <input class="inp" placeholder="选择日期"/>
     </date-select>
@@ -37,6 +37,9 @@ export default {
   methods: {
     test () {
       this.date = '2021-8-9';
+    },
+    onChange (data) {
+      console.log(data);
     }
   },
   computed: {

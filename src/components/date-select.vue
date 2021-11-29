@@ -41,7 +41,7 @@
 
 <script>
 
-const DEBUG = true;
+const DEBUG = !true;
 
 const POPUP_STATE = {
   OPEN: "open",
@@ -403,7 +403,7 @@ export default {
 .component-dateselect {
   --popup-height: calc(6 * 64px);
   --popup-btnwrap-height: 64px;
-  --select-line-color: #f3f3f3;
+  --select-line-color: rgba(42,178,255,.8);
 
   background: red;
   display: inline-block;
@@ -414,7 +414,7 @@ export default {
   position: absolute;
   bottom: 20px;
   left: 0;
-  /*background: green;*/
+  background: #0d357d;
   width: 500px;
   border-radius: 10px;
   overflow: hidden;
@@ -441,7 +441,7 @@ export default {
 }
 .component-dateselect .btn-wrap {
   height: var(--popup-btnwrap-height);
-  background: #409efe;
+  /*background: #409efe;*/
   display: flex;
   justify-content: space-around;
   align-items: center;
@@ -450,7 +450,7 @@ export default {
   width: 33.3%;
   height: calc(5 * 64px);
   /*background: grey;*/
-  border-right: 1px solid #f3f3f3;
+  /*border-right: 1px solid rgba(42,178,255,.8);*/
 }
 .component-dateselect .column:nth-child(3) {
   border-right: none;
@@ -459,9 +459,9 @@ export default {
   height: 64px;
   width: 100%;
   position: absolute;
-  /*border-top: 1px solid var(--select-line-color);*/
-  /*border-bottom: 1px solid var(--select-line-color);*/
-  box-shadow: 0px 0px 5px rgba(0,0,0,0.3);
+  border-top: 1px solid var(--select-line-color);
+  border-bottom: 1px solid var(--select-line-color);
+  /*box-shadow: 0px 0px 5px rgba(0,0,0,0.3);*/
   top: 50%; left: 0;
   transform: translate(0, -50%);
   pointer-events: none;
@@ -473,6 +473,6 @@ export default {
   font-size: 24px;
   font-weight: bold;
   user-select: none;
-  color: #409efe;
+  color: #fff;
 }
 </style>
