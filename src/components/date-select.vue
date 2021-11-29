@@ -9,7 +9,7 @@
     </div>
     <div
         class="popup-wrap"
-        :class="{ 'popup-wrap_open': isPopupStateToOpen, 'popup-wrap_close': !isPopupStateToOpen }"
+        :class="{ 'popup-wrap_open': visable, 'popup-wrap_close': !visable }"
         :style="'top:' + (slotHeight + popupMarginTop) + 'px;'"
     >
       <div class="popup-in">
@@ -32,7 +32,7 @@
           <div class="select-line"></div>
         </div>
         <div class="btn-wrap">
-
+          <slot name="button-group"></slot>
         </div>
       </div>
     </div>
@@ -75,6 +75,11 @@ export default {
     spaceMark: {
       type: String,
       default: "-"
+    },
+    // 选择其是否展示
+    visable: {
+      type: Boolean,
+      default: false
     }
   },
   data () {

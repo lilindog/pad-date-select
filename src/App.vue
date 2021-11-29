@@ -1,9 +1,12 @@
 <template>
   <div class="app">
     <button @click="test">test</button>
-    <date-select :value="date" @change="onChange">
+    <date-select :value="date" @change="onChange" :visable="visable">
 <!--    <date-select>-->
       <input class="inp" placeholder="选择日期"/>
+      <template v-slot:button-group>
+        <p>123</p>
+      </template>
     </date-select>
     <p>123456</p>
   </div>
@@ -29,6 +32,7 @@ export default {
       value: 'abd',
       isTest: true,
       date: '2022-3-31',
+      visable: false,
     }
   },
   mounted () {
@@ -36,7 +40,7 @@ export default {
   },
   methods: {
     test () {
-      this.date = '2021-8-9';
+      this.visable = !this.visable;
     },
     onChange (data) {
       console.log(data);
