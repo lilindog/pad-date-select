@@ -120,25 +120,28 @@ export default {
       const MTK = 'column' + ['Y', 'M', 'D'][index] + 'EleMT';
       const SK = ['years', 'months', 'days'][index];
       const ISTK = 'isStartTouch' + ['Y', 'M', 'D'][index];
-      column.addEventListener("touchstart", e => {
+      const onTouchstartOrMounsedown  = e => {
         this[ISTK] = true;
-        start = prev = e.changedTouches[0]?.screenY;
+        const y = this.getYFromEvent(e);
+        start = prev = y;
         startTime = new Date().getTime();
         this[MTK] = parseFloat(window.getComputedStyle(columnIn).marginTop);
-      });
-      column.addEventListener("touchmove", e => {
+      };
+      const onTouchmoveOrMousemove = e => {
+        let y = this.getYFromEvent(e);
         lastMoveTime = new Date().getTime();
-        let space = e.changedTouches[0]?.screenY - prev;
-        prev = e.changedTouches[0]?.screenY;
+        let space = y - prev;
+        prev = y;
         this[MTK] += space;
         columnIn.style.marginTop = this[MTK] + "px";
-      });
-      column.addEventListener("touchend", e => {
+      };
+      const onTouchendOrMouseup = e => {
         const spaceLastMoveTime = new Date().getTime() - lastMoveTime;
         this[ISTK] = false;
+        let y = this.getYFromEvent(e);
         let spaceTime = new Date().getTime() - startTime;
-        let v = (e.changedTouches[0]?.screenY - start) / spaceTime;
-        let space = v * (Math.abs(e.changedTouches[0]?.screenY - start));
+        let v = (y - start) / spaceTime;
+        let space = v * (Math.abs(y - start));
         // let eleMT = parseFloat(window.getComputedStyle(columnIn).marginTop);
         const eleMT =this[MTK];
         if (space + eleMT > 0) {
@@ -149,29 +152,42 @@ export default {
         // 这里要区分快速滑动后按住不放的情况
         // 哪怕之前的速度再快，此刻也不需要惯性
         if (spaceLastMoveTime > 20) {
-          scrollFinished.call(this);
+          scrollFinished();
         } else {
-          this.animationToPosition(MTK, ISTK, columnIn, space, 5, scrollFinished.bind(this));
+          this.animationToPosition(MTK, ISTK, columnIn, space, 5, scrollFinished);
         }
-        // 处理整切、慢拖溢出回弹
-        function scrollFinished() {
-          let space = 0;
-          let eleMT = this[MTK];
-          if (eleMT < -(this[SK].length - 3) * 64) {
-            console.log("a");
-            space = Math.abs(eleMT) - ((this[SK].length - 3) * 64);
-          } else if (eleMT > 0) {
-            console.log("b");
-            space = 0 - eleMT;
-          } else {
-            console.log("c");
-            space = -(eleMT - Math.round(eleMT / 64) * 64);
-          }
-          !this[ISTK] && this.animationToPosition(MTK, ISTK, columnIn, space, 5, () => {
-            console.log("end！！！");
-          });
+      };
+      // 善后；处理整切、慢拖溢出回弹
+      const scrollFinished = () => {
+        let space = 0;
+        let eleMT = this[MTK];
+        if (eleMT < -(this[SK].length - 3) * 64) {
+          console.log("a");
+          space = Math.abs(eleMT) - ((this[SK].length - 3) * 64);
+        } else if (eleMT > 0) {
+          console.log("b");
+          space = 0 - eleMT;
+        } else {
+          console.log("c");
+          space = -(eleMT - Math.round(eleMT / 64) * 64);
         }
-      });
+        !this[ISTK] && this.animationToPosition(MTK, ISTK, columnIn, space, 5, () => {
+          console.log("end！！！");
+        });
+      }
+      column.addEventListener("touchstart", onTouchstartOrMounsedown);
+      // column.addEventListener("mousedown", () => {
+      //   column.onmousemove = onTouchmoveOrMousemove;
+      // });
+      column.addEventListener("touchmove", onTouchmoveOrMousemove);
+      // column.addEventListener("mouseup", e => {
+      //   column.onmousemove = null;
+      //   onTouchendOrMouseup(e);
+      // });
+      column.addEventListener("touchend", onTouchendOrMouseup);
+    },
+    getYFromEvent (e) {
+      return e.screenY || e?.changedTouches[0]?.screenY;
     },
     animationToPosition (MTK, ISTK, ele, space = 0, _ = 5, cb = () => {}) {
       requestAnimationFrame(() => {
