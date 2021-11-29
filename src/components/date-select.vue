@@ -1,8 +1,6 @@
 <!--
-继续：
-* 兼容mosemove 事件和 touchmove 事件共存
-* 选择日期后发出事件，更新oldY\oldM\oldD
-* 选择月份时候，对天数的处理，比如3月有30天，假如切换到了2月，那么天数显示为几号？1还是28？
+可能存在的异常：
+* 在切换时候，外部value变动所带来的影响？这个场景应该不多，这里因为时间问题，我就先不去打磨了。
 -->
 <template>
   <div class="component-dateselect">
@@ -187,10 +185,28 @@ export default {
           // log("c");
           space = -(eleMT - Math.round(eleMT / 64) * 64);
         }
-        !this[ISTK] && this.animationToPosition(MTK, ISTK, columnIn, space, 5, () => {
+        if (this[ISTK]) return;
+        this.animationToPosition(MTK, ISTK, columnIn, space, 5, () => {
           const step = Math.floor(Math.ceil(Math.abs(this[MTK])) / 64);
-          // this['old' + ['Y', 'M', 'D'][index]] = this[MTK];
-          error(step);
+
+          // 处理年月切换时候的天数处理，以及最大选择切换问题
+          const handleDays = (y, m, cb = () => {}) => {
+            const oldDaysCount = this.days.length - 2;
+            this.generateD(y, m);
+            log('旧选择天数', '现月的天数');
+            log(this.oldD, this.days.length - 2);
+            if (this.oldD > this.days.length - 2 && this.days.length - 2 !== oldDaysCount) {
+              error('fuck');
+              const space = (this.oldD - (this.days.length - 2)) * 64;
+              this.oldD = this.days.length - 2;
+              log(space);
+              this.animationToPosition('columnDEleMT', 'isStartTouchD', this.columnInD, space, 5, cb);
+              return true;
+            } else {
+              return false;
+            }
+          }
+
           /**
            * ！！！
            * 切换年和月的时候，要注意天数的变化
@@ -202,23 +218,21 @@ export default {
               const y = this.years[step + 2];
               this.oldY = y;
               log('选择年：' + y);
-              this.triggerEvent(y);
-              const oldDaysCount = this.days.length - 2;
-              this.generateD(y, this.oldM);
-              if (this.oldD === oldDaysCount && this.days.length - 2 !== oldDaysCount) {
-                error('fuck');
-                log(oldDaysCount, this.days.length - 2);
-                log(oldDaysCount - (this.days.length - 2));
-                const space = (oldDaysCount - (this.days.length - 2)) * 64;
-                log(space);
-                this.animationToPosition('columnDEleMT', 'isStartTouchD', this.columnInD, space);
+              if (
+                  handleDays(y, this.oldM, this.triggerEvent.bind(this, y)) === false
+              ) {
+                this.triggerEvent(y);
               }
             },
             () => {
               const m = this.months[step + 2];
               this.oldM = m;
               log('选择月：' + m);
-              this.triggerEvent(null, m);
+              if (
+                  handleDays(this.oldY, m, this.triggerEvent.bind(this, null, m)) === false
+              ) {
+                this.triggerEvent(null, m);
+              }
             },
             () => {
               const d = this.days[step + 2];
@@ -287,7 +301,7 @@ export default {
       const years = Array(this.bothYearCount * 2 + 1)
           .fill(null)
           .reduce((t, _, index) => (t.push(new Date().getFullYear() - this.bothYearCount + index), t), []);
-      const months = Array(12).fill(null).reduce((t, _, index) => (t.push(index + 1), t), []);
+      const months = Array(12).fill(null).reduce((t, _, index) => (t.push(index + 1 < 10 ? '0' + (index + 1): index + 1), t), []);
       years.unshift(null, null);
       months.unshift(null, null);
       this.years = years;
@@ -297,7 +311,7 @@ export default {
       const dayCount = new Date(y, m, 0).getDate();
       log('生成天数：');
       log(dayCount);
-      const days = new Array(dayCount).fill(null).reduce((t, c, i) => (t.push(i + 1), t), []);
+      const days = new Array(dayCount).fill(null).reduce((t, c, i) => (t.push(i + 1 < 10 ? '0' + (i + 1) : i + 1), t), []);
       days.unshift(null, null);
       this.days = days;
     },
