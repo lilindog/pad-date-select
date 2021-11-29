@@ -42,10 +42,27 @@
 </template>
 
 <script>
+
+const DEBUG = true;
+
 const POPUP_STATE = {
   OPEN: "open",
   CLOSE: "close"
 };
+
+const EVENTS_MAP = {
+  'INPUT': 'input',
+  'CHANGE': 'change'
+}
+
+const log = (...args) => {
+  DEBUG && console.log(...args);
+};
+
+const error = (...args) => {
+  DEBUG && console.error(...args);
+};
+
 export default {
   name: "date-select",
   props: {
@@ -54,10 +71,13 @@ export default {
       type: Number,
       default: 10
     },
-    // 年月日，全部设置才会触发选择器对准当前日期
-    y: Number,
-    m: Number,
-    d: Number,
+    // 年月日字符串，如2021-12-12、2021/12/12 间隔都要与props.spaceMark 一致，否则无效
+    value: String,
+    // 日期间隔符
+    spaceMark: {
+      type: String,
+      default: "-"
+    }
   },
   data () {
     return {
@@ -90,17 +110,14 @@ export default {
     }
   },
   watch: {
-    y: 'handeSelectPosition',
-    m: 'handeSelectPosition',
-    d: 'handeSelectPosition'
+    value: 'handeSelectPosition'
   },
   mounted () {
     this.slotHeight = this.$refs["slot-wrap"].offsetHeight;
     this.popupState = POPUP_STATE["OPEN"];
-    this.generateYMD();
     this.bindEvents();
-    this.$nextTick(this.handeSelectPosition.bind(this));
-    // this.handeSelectPosition();
+    this.generateYM();
+    this.handeSelectPosition();
   },
   methods: {
     bindEvents () {
@@ -109,7 +126,6 @@ export default {
           const refIn = this["columnIn" + k.toUpperCase()] = this.$refs["column-in-" + k];
           return [ref, refIn];
       });
-      console.log();
       columnAndColumnIns.forEach(this.onEvents.bind(this));
     },
     onEvents ([ column, columnIn ], index) {
@@ -162,22 +178,59 @@ export default {
         let space = 0;
         let eleMT = this[MTK];
         if (eleMT < -(this[SK].length - 3) * 64) {
-          console.log("a");
+          // log("a");
           space = Math.abs(eleMT) - ((this[SK].length - 3) * 64);
         } else if (eleMT > 0) {
-          console.log("b");
+          // log("b");
           space = 0 - eleMT;
         } else {
-          console.log("c");
+          // log("c");
           space = -(eleMT - Math.round(eleMT / 64) * 64);
         }
         !this[ISTK] && this.animationToPosition(MTK, ISTK, columnIn, space, 5, () => {
-          console.log("end！！！");
+          const step = Math.floor(Math.ceil(Math.abs(this[MTK])) / 64);
+          // this['old' + ['Y', 'M', 'D'][index]] = this[MTK];
+          error(step);
+          /**
+           * ！！！
+           * 切换年和月的时候，要注意天数的变化
+           * 若上次上次选择处于最后一天，此次变化后天数少于他，则需要变动oldD，且不需要出发事件
+           * 使用动画的方式将其最后一天挪到本月的最后一天
+           */
+          [
+            () => {
+              const y = this.years[step + 2];
+              this.oldY = y;
+              log('选择年：' + y);
+              this.triggerEvent(y);
+              const oldDaysCount = this.days.length - 2;
+              this.generateD(y, this.oldM);
+              if (this.oldD === oldDaysCount && this.days.length - 2 !== oldDaysCount) {
+                error('fuck');
+                log(oldDaysCount, this.days.length - 2);
+                log(oldDaysCount - (this.days.length - 2));
+                const space = (oldDaysCount - (this.days.length - 2)) * 64;
+                log(space);
+                this.animationToPosition('columnDEleMT', 'isStartTouchD', this.columnInD, space);
+              }
+            },
+            () => {
+              const m = this.months[step + 2];
+              this.oldM = m;
+              log('选择月：' + m);
+              this.triggerEvent(null, m);
+            },
+            () => {
+              const d = this.days[step + 2];
+              this.oldD = d;
+              log('选择日：' + d);
+              this.triggerEvent(null, null, d);
+            }
+          ][index].call(this);
         });
       };
 
       const onPcMouseup = e => {
-        console.error("fuck");
         onTouchendOrMouseup(e);
         column.onmousemove = null;
         document.removeEventListener("mouseup", onPcMouseup);
@@ -204,20 +257,21 @@ export default {
         column.onmousemove = null;
       };
     },
-    getYFromEvent (e) {
-      if (e.screenY) {
-        console.log("pc>>");
-        const _ = e.screenY;
-        console.log(_);
-        return _;
-      } else {
-        console.log("mobile>>");
-        const _ = e?.changedTouches[0].screenY;
-        console.log(_);
-        return _;
-      }
-      // return e.screenY || e?.changedTouches[0]?.screenY;
+
+    triggerEvent (y, m, d) {
+      y = y || this.oldY;
+      m = m || this.oldM;
+      d = d || this.oldD;
+      log("出发选择事件：");
+      log(y, m, d);
+      this.$emit(EVENTS_MAP['CHANGE'], { y, m, d });
+      this.$emit(EVENTS_MAP['INPUT'], [y, m, d].join(this.spaceMark));
     },
+
+    getYFromEvent (e) {
+      return e.screenY || e?.changedTouches[0]?.screenY;
+    },
+
     animationToPosition (MTK, ISTK, ele, space = 0, _ = 5, cb = () => {}) {
       requestAnimationFrame(() => {
         let move = space / _;
@@ -228,39 +282,49 @@ export default {
         else cb();
       });
     },
-    generateYMD () {
+
+    generateYM () {
       const years = Array(this.bothYearCount * 2 + 1)
           .fill(null)
           .reduce((t, _, index) => (t.push(new Date().getFullYear() - this.bothYearCount + index), t), []);
       const months = Array(12).fill(null).reduce((t, _, index) => (t.push(index + 1), t), []);
-      const days = Array(28).fill(null).reduce((t, _, index) => (t.push(index + 1), t), []);
       years.unshift(null, null);
       months.unshift(null, null);
-      days.unshift(null, null);
       this.years = years;
       this.months = months;
+    },
+    generateD (y, m) {
+      const dayCount = new Date(y, m, 0).getDate();
+      log('生成天数：');
+      log(dayCount);
+      const days = new Array(dayCount).fill(null).reduce((t, c, i) => (t.push(i + 1), t), []);
+      days.unshift(null, null);
       this.days = days;
     },
-    handeSelectPosition () {
-      if (this.y && this.m && this.d) {
-        console.log(">>>>>>");
-        let dt = new Date;
-        // if (!this.oldY) this.oldY = dt.getFullYear();
-        // if (!this.oldM) this.oldM = dt.getMonth() + 1;
-        // if (!this.oldD) this.oldD = dt.getDate();
-
-        dt = new Date(this.y, this.m - 1, this.d);
-        const y = dt.getFullYear();
-        const m = dt.getMonth() + 1;
-        const d = dt.getDate();
+    async handeSelectPosition () {
+      if (this.value) {
+        /**
+         * ！！！
+         * 如果props.value不合法，或props.spaceMark不正确，
+         * 都将导致时间无效或者不正确
+         */
+        let [ y, m, d ] = this.value.split(this.spaceMark);
+        await new Promise(r => {
+          this.generateD(y, m);
+          this.$nextTick(r);
+        });
+        const dt = new Date(y, m - 1, d);
+        y = dt.getFullYear();
+        m = dt.getMonth() + 1;
+        d = dt.getDate();
         if (this.y !== this.oldY) {
           let spaceY;
           if (!this.oldY) {
-            // console.log("> y1");
+            log("> y1");
             spaceY = ( (new Date().getFullYear() - this.bothYearCount) - y ) * 64;
           } else {
-            // console.log("> y2");
-            console.log(this.oldY, y);
+            log("> y2");
+            log(this.oldY, y);
             spaceY = ( (y > this.oldY ? this.oldY - y : this.oldY - y) ) * 64;
           }
           this.oldY = y;
@@ -269,10 +333,10 @@ export default {
         if (this.m !== this.oldM) {
           let spaceM;
           if (!this.oldM) {
-            // console.log("> m1");
+            log("> m1");
             spaceM = -(m - 1) * 64; // 减去1是因为1月顶边距为0, 如果不减1，那么1*64就不是1月份的位置了
           } else {
-            // console.log("> m2");
+            log("> m2");
             spaceM = (this.oldM - m) * 64;
           }
           this.oldM = m;
@@ -281,24 +345,29 @@ export default {
         if (this.d !== this.oldD) {
           let spaceD;
           if (!this.oldD) {
-            // console.log("> d1");
+            log("> d1");
             spaceD = -(d - 1) * 64; // 减去1原因与上面的月份处理相同
           } else {
-            // console.log("> d2");
+            log("> d2");
             spaceD = (this.oldD - d) * 64;
           }
           this.oldD = d;
           this.animationToPosition('columnDEleMT', 'isStartTouchD', this.columnInD, spaceD);
         }
       } else {
+        console.log(">> 没有props.value,显示当前日期");
         this.toTodaySelected();
       }
     },
-    toTodaySelected () {
+    async toTodaySelected () {
       const dt = new Date;
       const y = dt.getFullYear();
       const m = dt.getMonth() + 1;
       const d = dt.getDate();
+      await new Promise(r => {
+        this.generateD(y, m);
+        this.$nextTick(r);
+      });
       /**
        * 这里可以不用动画，直接设置为当前日期
        */

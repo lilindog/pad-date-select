@@ -1,7 +1,7 @@
 <template>
   <div class="app">
     <button @click="test">test</button>
-    <date-select :y="year" :m="month" :d="day">
+    <date-select :value="date">
 <!--    <date-select>-->
       <input class="inp" placeholder="选择日期"/>
     </date-select>
@@ -26,11 +26,9 @@ export default {
   },
   data () {
     return {
-      value: "abd",
+      value: 'abd',
       isTest: true,
-      year: 2019,
-      month: 6,
-      day: 8
+      date: '2022-3-31',
     }
   },
   mounted () {
@@ -38,7 +36,7 @@ export default {
   },
   methods: {
     test () {
-      this.day = 4;
+      this.date = '2021-8-9';
     }
   },
   computed: {
