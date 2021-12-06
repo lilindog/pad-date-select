@@ -1,6 +1,8 @@
 <!--
-可能存在的异常：
-* 在切换时候，外部value变动所带来的影响？这个场景应该不多，这里因为时间问题，我就先不去打磨了。
+以下2点暂定出现的几率不高，若存在后续我再改动：
+
+* 外部props.dateRange变化时，处于手动滑动或者惯性未结束时的处理。
+* 外部props.value变化时，当前处于手动滑动或者惯性动画未结束的处理。
 -->
 <template>
   <div class="component-dateselect">
@@ -16,17 +18,17 @@
         <div ref="container" class="container">
           <div class="column" ref="column-y">
             <div ref="column-in-y">
-              <div class="child" v-for="(item, index) in years" :key="index" :ref="'y-' + item">{{item}}</div>
+              <div class="child" v-for="(item, index) in ranges[0]" :key="index" :ref="'y-' + item">{{item}}</div>
             </div>
           </div>
           <div class="column" ref="column-m">
             <div ref="column-in-m">
-              <div class="child" v-for="(item, index) in months" :key="index" :ref="'m-' + item">{{item}}</div>
+              <div class="child" v-for="(item, index) in ranges[1]" :key="index" :ref="'m-' + item">{{item}}</div>
             </div>
           </div>
           <div class="column" ref="column-d">
             <div ref="column-in-d">
-              <div class="child" v-for="(item, index) in days" :key="index" :ref="'d-' + item">{{item}}</div>
+              <div class="child" v-for="(item, index) in ranges[2]" :key="index" :ref="'d-' + item">{{item}}</div>
             </div>
           </div>
           <div class="select-line"></div>
@@ -38,36 +40,41 @@
     </div>
   </div>
 </template>
-
 <script>
-
-const DEBUG = !true;
-
-const POPUP_STATE = {
-  OPEN: "open",
-  CLOSE: "close"
-};
-
-const EVENTS_MAP = {
-  'INPUT': 'input',
-  'CHANGE': 'change'
-}
 
 const log = (...args) => {
   DEBUG && console.log(...args);
 };
-
 const error = (...args) => {
   DEBUG && console.error(...args);
 };
 
+const DEBUG = !true;
+const HEIGHT = 64;
+const POPUP_STATE = {
+  OPEN: "open",
+  CLOSE: "close"
+};
+const EVENTS_MAP = {
+  'INPUT': 'input',
+  'CHANGE': 'change'
+}
+function generateRangeArray (count = 0, start = 0) {
+  return Array(count).fill(null).map((...[, index]) => start + index);
+}
+
 export default {
   name: "date-select",
   props: {
-    // 以当年为准，上下加多少年的选择范围
-    bothYearCount: {
-      type: Number,
-      default: 10
+    // 日期范围，默认上下10年,
+    // !!! 起止日期间隔需要正确传递，包括但不限于日期正确、日期字符串格式正确、截止日期不小于起止日期。
+    // 因为没有针对日期范围参数做防呆处理，极容易出现未知异常
+    dateRange: {
+      type: Array,
+      default: () => [
+          `${new Date().getFullYear() - 10}-01-01`,
+          `${new Date().getFullYear() + 10}-12-01`,
+      ]
     },
     // 年月日字符串，如2021-12-12、2021/12/12 间隔都要与props.spaceMark 一致，否则无效
     value: String,
@@ -76,7 +83,7 @@ export default {
       type: String,
       default: "-"
     },
-    // 选择其是否展示
+    // 展示与否
     visable: {
       type: Boolean,
       default: false
@@ -86,25 +93,21 @@ export default {
     return {
       slotHeight: 0,
       popupMarginTop: 10,
-      popupState: POPUP_STATE["CLOSE"],
-      years: [],
-      months: [],
-      days: [],
-      /**
-       * ============= 以下数据不与视图耦合 =============
-       */
-      columnInY: null,
-      columnInM: null,
-      columnInD: null,
-      columnYEleMT: 0,
-      columnMEleMT: 0,
-      columnDEleMT: 0,
-      isStartTouchY: false,
-      isStartTouchM: false,
-      isStartTouchD: false,
-      oldY: 0,
-      oldM: 0,
-      oldD: 0,
+      ranges: [ [], [], [] ],
+
+      // ============= 以下数据不与视图耦合 =============
+      y: 0,
+      m: 0,
+      d: 0,
+      isTouhes: [ false, false, false ],
+      starts: [ 0, 0, 0 ],
+      prevs: [ 0, 0, 0 ],
+      startTimes: [ 0, 0, 0 ],
+      lastMoveTimes: [ 0, 0, 0 ],
+      eles: [ null, null, null ],
+      tops: [ 0, 0, 0 ],
+      limitStart: [ 0, 0, 0 ],
+      limitEnd: [ 0, 0, 0 ]
     }
   },
   computed: {
@@ -113,292 +116,306 @@ export default {
     }
   },
   watch: {
-    value: 'handeSelectPosition'
+    value: function () {
+      const y = this.y, m = this.m, d = this.d;
+      this.generateDefaultDate();
+      if (y !== this.y || m !== this.m || d !== this.d) {
+        this.moveToCurrentDate();
+      }
+    },
+    dateRange: "init"
   },
   mounted () {
     this.slotHeight = this.$refs["slot-wrap"].offsetHeight;
-    this.popupState = POPUP_STATE["OPEN"];
-    this.bindEvents();
-    this.generateYM();
-    this.handeSelectPosition();
+    this.eles = [
+      this.$refs['column-in-y'],
+      this.$refs['column-in-m'],
+      this.$refs['column-in-d'],
+    ];
+    this.eles.forEach((item, index) => {
+
+      // mobile
+      [ 'start', 'move', 'end' ].forEach(evt => {
+        item[
+            {
+              'start': 'ontouchstart',
+              'move': 'ontouchmove',
+              'end': 'ontouchend'
+            }[evt]
+        ] = this[evt + 'Factory'](index);
+      });
+
+      // pc
+      const mousedown = this.startFactory(index);
+      const mousemove = this.moveFactory(index);
+      const mouseup = this.endFactory(index);
+      const documentMouseUp = e => {
+        mouseup(e);
+        item.onmousemove = null;
+        document.removeEventListener('mouseup', documentMouseUp);
+      };
+      item.onmousedown = e => {
+        mousedown(e);
+        item.onmousemove = mousemove;
+        document.addEventListener('mouseup', documentMouseUp);
+      };
+      item.onmouseup = e => {
+        e.stopPropagation();
+        item.onmousemove = null;
+        mouseup(e);
+        document.removeEventListener('mouseup', documentMouseUp);
+      };
+    });
+
+    this.init();
   },
   methods: {
-    bindEvents () {
-      const columnAndColumnIns = ['y', 'm', 'd'].map(k => {
-          const ref = this.$refs["column-" + k];
-          const refIn = this["columnIn" + k.toUpperCase()] = this.$refs["column-in-" + k];
-          return [ref, refIn];
-      });
-      columnAndColumnIns.forEach(this.onEvents.bind(this));
+
+    init () {
+      this.generateDefaultDate();
+      this.generateDefaultRanges();
+      this.moveToCurrentDate();
     },
-    onEvents ([ column, columnIn ], index) {
-      let start = 0;
-      let startTime = 0;
-      let prev = 0;
-      let lastMoveTime = 0;
-      const MTK = 'column' + ['Y', 'M', 'D'][index] + 'EleMT';
-      const SK = ['years', 'months', 'days'][index];
-      const ISTK = 'isStartTouch' + ['Y', 'M', 'D'][index];
-      const onTouchstartOrMounsedown = e => {
-        this[ISTK] = true;
-        const y = this.getYFromEvent(e);
-        start = prev = y;
-        startTime = new Date().getTime();
-        this[MTK] = parseFloat(window.getComputedStyle(columnIn).marginTop);
-      };
-      const onTouchmoveOrMousemove = e => {
-        let y = this.getYFromEvent(e);
-        lastMoveTime = new Date().getTime();
-        let space = y - prev;
-        prev = y;
-        this[MTK] += space;
-        columnIn.style.marginTop = this[MTK] + "px";
-      };
-      const onTouchendOrMouseup = e => {
-        const spaceLastMoveTime = new Date().getTime() - lastMoveTime;
-        this[ISTK] = false;
-        let y = this.getYFromEvent(e);
-        let spaceTime = new Date().getTime() - startTime;
-        let v = (y - start) / spaceTime;
-        let space = v * (Math.abs(y - start));
-        // let eleMT = parseFloat(window.getComputedStyle(columnIn).marginTop);
-        const eleMT =this[MTK];
-        if (space + eleMT > 0) {
-          space = 0 - eleMT;
-        } else if (space + eleMT <= -((this[SK].length - 3) * 64)) {
-          space = -((this[SK].length - 3) * 64) - eleMT;
+
+    generateDefaultDate () {
+      let [ y, m, d ] = this.value.split(this.spaceMark).map(i => Number(i));
+      if (!y || !m || !d) {
+        y = new Date().getFullYear();
+        m = new Date().getMonth() + 1;
+        d = new Date().getDate();
+      }
+      this.y = y;
+      this.m = m;
+      this.d = d;
+    },
+
+    generateDefaultRanges () {
+      const LS = this.limitStart = this.dateRange[0].split("-").map(i => Number(i));
+      const LE = this.limitEnd = this.dateRange[1].split("-").map(i => Number(i));
+
+      const years = Array(LE[0] - LS[0] + 1).fill(null).map((...[, i]) => LS[0] + i);
+      years.unshift(null, null);
+      this.ranges = [ years, this.generateMonthRange(), this.generateDayRange() ];
+    },
+
+    generateMonthRange () {
+      const Y = this.y;
+      const LS = this.limitStart;
+      const LE = this.limitEnd;
+      let months = [];
+      if (Y <= LS[0]) {
+        if (LS[0] == LE[0]) months = generateRangeArray(LE[1] - LS[1] + 1, LS[1]);
+        else months = generateRangeArray(12 - LS[1] + 1, LS[1]);
+      } else if (Y >= LE[0]) {
+        months = generateRangeArray(LE[1], 1);
+      } else {
+        months = generateRangeArray(12, 1);
+      }
+      error("months =====>");
+      log(months);
+
+      months.unshift(null, null);
+      return months;
+    },
+
+    generateDayRange () {
+      const Y = this.y;
+      const M = this.m;
+      const LS = this.limitStart;
+      const LE = this.limitEnd;
+      let days = [];
+      if (Y <= LS[0] || (Y <= LS[0] && M <= LS[1]) ) {
+        log("days: ", 1)
+        if (LS[0] === LE[0] && LS[1] === LE[1]) {
+          days = generateRangeArray(LE[2] - LS[2] + 1, LS[2]);
+        } else {
+          const dateCount = new Date(LS[0], LS[1], 0).getDate();
+          days = generateRangeArray(dateCount - LS[2] + 1, LS[2]);
         }
+      } else if (Y >= LE[0] || ( Y >= LE[0] && M >= LE[1]) ) {
+        log("days: ", 2)
+        days = generateRangeArray(LE[2], 1);
+      } else {
+        const dateCount = new Date(Y, M, 0).getDate();
+        days = generateRangeArray(dateCount, 1);
+      }
+      error("days =====>");
+      log(days);
+
+      days.unshift(null, null);
+      return days;
+    },
+
+    moveToCurrentDate () {
+      const Y = this.y;
+      const M = this.m;
+      const D = this.d;
+      const LS = this.limitStart;
+      const LE = this.limitEnd;
+      const RGS = this.ranges;
+      let y, m, d;
+
+      y = Y < LS[0] ? LS[0] : Y > LE[0] ? LE[0] : Y;
+      this.moveToPosition(0, -((RGS[0].indexOf(y) - 2) * HEIGHT));
+
+      this.ranges = [ RGS[0], this.generateMonthRange(), RGS[2] ];
+      // 可以对比时间戳，优化时在考虑
+      if (Y > LE[0] || (Y > LE[0] && M > LE[1]) ) {
+        m = RGS[1][RGS[1].length - 1];
+      } else if (Y < LS[0] || (Y < LS[0] && M < LS[1]) ) {
+        m = RGS[1][2];
+      } else {
+        m = M;
+      }
+      this.moveToPosition(1, -((RGS[1].indexOf(m) - 2) * HEIGHT) );
+
+      this.ranges = [ RGS[0], RGS[1], this.generateDayRange() ];
+      // 可以对比时间戳，优化时在考虑
+      if (Y > LE[0] || (Y > LE[0] && M > LE[1]) || (Y > LE[0] && M > LE[1] &&  D > LE[2]) ) {
+        d = RGS[2][RGS[2].length - 1];
+      } else if (Y < LS[0] || (Y < LS[0] && M < LS[1]) || (Y < LS[0] && M < LS[1] &&  D < LS[2]) ) {
+        d = RGS[2][2];
+      } else {
+        d = D;
+      }
+
+      this.moveToPosition(2, -((RGS[2].indexOf(d) - 2) * HEIGHT) );
+    },
+
+    startFactory (index = -1) {
+      return e => {
+        this.isTouhes[index] = true;
+        this.startTimes[index] = new Date().getTime();
+        this.prevs[index] = this.starts[index] = this.getYFromEvent(e);
+      }
+    },
+
+    moveFactory (index = -1) {
+      return e => {
+        let
+            y = this.getYFromEvent(e),
+            space = y - this.prevs[index];
+        this.prevs[index] = y;
+        this.lastMoveTimes[index] = new Date().getTime();
+        this.tops[index] += space;
+        this.eles[index].style.marginTop = this.tops[index] + 'px';
+      }
+    },
+
+    endFactory (index = -1) {
+      return () => {
+        this.isTouhes[index] = false;
+        const
+            moveSpace = this.prevs[index] - this.starts[index],
+            moveTime = this.lastMoveTimes[index] - this.startTimes[index],
+            space = Math.abs(moveSpace) / moveTime * moveSpace;
+        let position = this.tops[index] + space;
+        position = (position / HEIGHT | 0) * HEIGHT;
+        if (position > 0) position = 0;
+        // 这里先按元素的高度来计算最大上滑动值，也可以按对应元素child数量来计算更科学
+        else if (position < -(this.eles[index].offsetHeight - 3 * HEIGHT)) position = -(this.eles[index].offsetHeight - (HEIGHT * 3));
         // 这里要区分快速滑动后按住不放的情况
-        // 哪怕之前的速度再快，此刻也不需要惯性
-        if (spaceLastMoveTime > 20) {
-          scrollFinished();
+        // 若按住不放哪怕之前的速度再快，此刻也不需要惯性
+        if (moveTime > 200) {
+          // 直接处理整切, 包括两端溢出
+          this.handleCut(index, this.changeSelect.bind(this, index));
         } else {
-          this.animationToPosition(MTK, ISTK, columnIn, space, 5, scrollFinished);
+          this.animationMoveToPosition(index, position, this.changeSelect.bind(this, index));
         }
-      };
-      // 善后；处理整切、慢拖溢出回弹
-      const scrollFinished = () => {
-        let space = 0;
-        let eleMT = this[MTK];
-        if (eleMT < -(this[SK].length - 3) * 64) {
-          // log("a");
-          space = Math.abs(eleMT) - ((this[SK].length - 3) * 64);
-        } else if (eleMT > 0) {
-          // log("b");
-          space = 0 - eleMT;
-        } else {
-          // log("c");
-          space = -(eleMT - Math.round(eleMT / 64) * 64);
-        }
-        if (this[ISTK]) return;
-        this.animationToPosition(MTK, ISTK, columnIn, space, 5, () => {
-          const step = Math.floor(Math.ceil(Math.abs(this[MTK])) / 64);
-
-          // 处理年月切换时候的天数处理，以及最大选择切换问题
-          const handleDays = (y, m, cb = () => {}) => {
-            const oldDaysCount = this.days.length - 2;
-            this.generateD(y, m);
-            log('旧选择天数', '现月的天数');
-            log(this.oldD, this.days.length - 2);
-            if (this.oldD > this.days.length - 2 && this.days.length - 2 !== oldDaysCount) {
-              error('fuck');
-              const space = (this.oldD - (this.days.length - 2)) * 64;
-              this.oldD = this.days.length - 2;
-              log(space);
-              this.animationToPosition('columnDEleMT', 'isStartTouchD', this.columnInD, space, 5, cb);
-              return true;
-            } else {
-              return false;
-            }
-          }
-
-          /**
-           * ！！！
-           * 切换年和月的时候，要注意天数的变化
-           * 若上次上次选择处于最后一天，此次变化后天数少于他，则需要变动oldD，且不需要出发事件
-           * 使用动画的方式将其最后一天挪到本月的最后一天
-           */
-          [
-            () => {
-              const y = this.years[step + 2];
-              this.oldY = y;
-              log('选择年：' + y);
-              if (
-                  handleDays(y, this.oldM, this.triggerEvent.bind(this, y)) === false
-              ) {
-                this.triggerEvent(y);
-              }
-            },
-            () => {
-              const m = this.months[step + 2];
-              this.oldM = m;
-              log('选择月：' + m);
-              if (
-                  handleDays(this.oldY, m, this.triggerEvent.bind(this, null, m)) === false
-              ) {
-                this.triggerEvent(null, m);
-              }
-            },
-            () => {
-              const d = this.days[step + 2];
-              this.oldD = d;
-              log('选择日：' + d);
-              this.triggerEvent(null, null, d);
-            }
-          ][index].call(this);
-        });
-      };
-
-      const onPcMouseup = e => {
-        onTouchendOrMouseup(e);
-        column.onmousemove = null;
-        document.removeEventListener("mouseup", onPcMouseup);
-      };
-
-      /**
-       * 移动端事件
-       */
-      column.addEventListener("touchstart", onTouchstartOrMounsedown);
-      column.addEventListener("touchmove", onTouchmoveOrMousemove);
-      column.addEventListener("touchend", onTouchendOrMouseup);
-
-      /**
-       * pc端事件
-       */
-      column.onmousedown = e => {
-        onTouchstartOrMounsedown(e);
-        column.onmousemove = onTouchmoveOrMousemove;
-        document.addEventListener("mouseup", onPcMouseup);
-      };
-      column.onmouseup = e => {
-        e.stopPropagation();
-        onTouchendOrMouseup(e);
-        column.onmousemove = null;
-      };
+      }
     },
 
-    triggerEvent (y, m, d) {
-      y = y || this.oldY;
-      m = m || this.oldM;
-      d = d || this.oldD;
-      log("出发选择事件：");
-      log(y, m, d);
-      this.$emit(EVENTS_MAP['CHANGE'], { y, m, d });
-      this.$emit(EVENTS_MAP['INPUT'], [y, m, d].join(this.spaceMark));
+    changeSelect (index = 0) {
+      const RGS = this.ranges;
+      const RG = RGS[index];
+      const TOP = this.tops[index];
+      const IDX = Math.abs(Math.round(TOP / HEIGHT)) + 2;
+      const setRange = (index = -1, range = []) => {
+        this.$set(this.ranges, index, range);
+      }
+      [
+        () => {
+          this.y = RG[IDX];
+
+          setRange(1, this.generateMonthRange());
+          this.moveToPosition(1, 0);
+          this.m = RGS[1][2];
+
+          setRange(2, this.generateDayRange());
+          this.moveToPosition(2, 0);
+          this.d = RGS[2][2];
+        },
+        () => {
+          this.m = RG[IDX];
+          setRange(2, this.generateDayRange());
+          this.moveToPosition(2, 0);
+          this.d = RGS[2][2];
+        },
+        () => {
+          this.d = RG[IDX];
+        }
+      ][index].call(this);
+      this.triggerEvent();
+    },
+
+    handleCut (index = -1, cb) {
+      let position = this.tops[index];
+      const min = -(Number(this.eles[index].offsetHeight) - HEIGHT * 3);
+      if (position > 0) position = 0;
+      else if (position < min) position = min;
+      else position = Math.round(position / HEIGHT) * HEIGHT;
+      this.animationMoveToPosition(index, position, cb);
+    },
+
+    triggerEvent () {
+      const data = ["y", "m", "d"].reduce((t, k) => {
+        t[k] = this[k] < 10 ? "0" + this[k] : String(this[k]);
+        return t;
+      }, {});
+      this.$emit(EVENTS_MAP['CHANGE'], data);
+      this.$emit(EVENTS_MAP['INPUT'], Reflect.ownKeys(data).map(k => data[k]).join(this.spaceMark));
     },
 
     getYFromEvent (e) {
       return e.screenY || e?.changedTouches[0]?.screenY;
     },
 
-    animationToPosition (MTK, ISTK, ele, space = 0, _ = 5, cb = () => {}) {
-      requestAnimationFrame(() => {
-        let move = space / _;
-        space -= move;
-        this[MTK] += move;
-        ele.style.marginTop = this[MTK] + "px";
-        if (Math.abs(space) * 10 | 0 !== 0 && !this[ISTK]) this.animationToPosition(MTK, ISTK, ele, space, _, cb);
-        else cb();
-      });
+    moveToPosition (eleIndex = -1, position = 0) {
+      this.tops[eleIndex] = position;
+      this.eles[eleIndex].style.marginTop = this.tops[eleIndex] + "px";
     },
 
-    generateYM () {
-      const years = Array(this.bothYearCount * 2 + 1)
-          .fill(null)
-          .reduce((t, _, index) => (t.push(new Date().getFullYear() - this.bothYearCount + index), t), []);
-      const months = Array(12).fill(null).reduce((t, _, index) => (t.push(index + 1 < 10 ? '0' + (index + 1): index + 1), t), []);
-      years.unshift(null, null);
-      months.unshift(null, null);
-      this.years = years;
-      this.months = months;
-    },
-    generateD (y, m) {
-      const dayCount = new Date(y, m, 0).getDate();
-      log('生成天数：');
-      log(dayCount);
-      const days = new Array(dayCount).fill(null).reduce((t, c, i) => (t.push(i + 1 < 10 ? '0' + (i + 1) : i + 1), t), []);
-      days.unshift(null, null);
-      this.days = days;
-    },
-    async handeSelectPosition () {
-      if (this.value) {
-        /**
-         * ！！！
-         * 如果props.value不合法，或props.spaceMark不正确，
-         * 都将导致时间无效或者不正确
-         */
-        let [ y, m, d ] = this.value.split(this.spaceMark);
-        await new Promise(r => {
-          this.generateD(y, m);
-          this.$nextTick(r);
-        });
-        const dt = new Date(y, m - 1, d);
-        y = dt.getFullYear();
-        m = dt.getMonth() + 1;
-        d = dt.getDate();
-        if (this.y !== this.oldY) {
-          let spaceY;
-          if (!this.oldY) {
-            log("> y1");
-            spaceY = ( (new Date().getFullYear() - this.bothYearCount) - y ) * 64;
-          } else {
-            log("> y2");
-            log(this.oldY, y);
-            spaceY = ( (y > this.oldY ? this.oldY - y : this.oldY - y) ) * 64;
-          }
-          this.oldY = y;
-          this.animationToPosition('columnYEleMT', 'isStartTouchY', this.columnInY, spaceY);
-        }
-        if (this.m !== this.oldM) {
-          let spaceM;
-          if (!this.oldM) {
-            log("> m1");
-            spaceM = -(m - 1) * 64; // 减去1是因为1月顶边距为0, 如果不减1，那么1*64就不是1月份的位置了
-          } else {
-            log("> m2");
-            spaceM = (this.oldM - m) * 64;
-          }
-          this.oldM = m;
-          this.animationToPosition('columnMEleMT', 'isStartTouchM', this.columnInM, spaceM);
-        }
-        if (this.d !== this.oldD) {
-          let spaceD;
-          if (!this.oldD) {
-            log("> d1");
-            spaceD = -(d - 1) * 64; // 减去1原因与上面的月份处理相同
-          } else {
-            log("> d2");
-            spaceD = (this.oldD - d) * 64;
-          }
-          this.oldD = d;
-          this.animationToPosition('columnDEleMT', 'isStartTouchD', this.columnInD, spaceD);
-        }
-      } else {
-        console.log(">> 没有props.value,显示当前日期");
-        this.toTodaySelected();
+    animationMoveToPosition (
+        eleIndex = -1,
+        position = 0,
+        cb,
+        v = 5
+    ) {
+      if (position > 0) throw new RangeError('position 不能大于0！');
+      const getTop = () => {
+        return this.tops[eleIndex] = this.tops[eleIndex] ?? Number(getComputedStyle(this.eles[eleIndex]).marginTop ?? 0);
+      };
+      const addTop = top => {
+        this.tops[eleIndex]  = getTop() + top;
+        this.eles[eleIndex].style.marginTop = getTop() + 'px';
       }
-    },
-    async toTodaySelected () {
-      const dt = new Date;
-      const y = dt.getFullYear();
-      const m = dt.getMonth() + 1;
-      const d = dt.getDate();
-      await new Promise(r => {
-        this.generateD(y, m);
-        this.$nextTick(r);
-      });
-      /**
-       * 这里可以不用动画，直接设置为当前日期
-       */
-      this.animationToPosition('columnYEleMT', 'isStartTouchY', this.columnInY, 0 - this.bothYearCount * 64, 20);
-      this.animationToPosition('columnMEleMT', 'isStartTouchM', this.columnInM, -((m - 1) * 64), 20);
-      this.animationToPosition('columnDEleMT', 'isStartTouchD', this.columnInD, -((d - 1) * 64), 20);
-      this.oldY = y;
-      this.oldM = m;
-      this.oldD = d;
-    },
-    togglePopup () {
-
+      let space = position - getTop();
+      let move;
+      const animation = () => {
+        if (this.isTouhes[eleIndex]) return;
+        requestAnimationFrame(() => {
+          if (space.toFixed(1) == 0) {
+            typeof cb === "function" && cb();
+            return;
+          }
+          move = space / v;
+          if (Math.abs(space) <= 1) move = space;
+          space -= move;
+          addTop(move);
+          animation();
+        });
+      };
+      animation();
     }
   }
 }

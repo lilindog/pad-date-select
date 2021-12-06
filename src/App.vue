@@ -1,6 +1,9 @@
 <template>
   <div class="app">
-    <date-select v-model="value" @change="onChange" :visable="visable">
+    <h1 @click="test">改变value</h1>
+    <h1 @click="test1">改变dateRange</h1>
+
+    <date-select v-model="value" @change="onChange" @input="onInput" :visable="visable" :date-range="dateRange">
       <input class="inp" placeholder="选择日期" :value="value" @click="visable = true"/>
       <template v-slot:button-group >
         <div class="btn-wrap">
@@ -21,11 +24,23 @@ export default {
   data () {
     return {
       value: "",
-      visable: false
+      dateRange: ["2018-01-01", "2022-12-12"],
+      visable: !false
     }
   },
   methods: {
+    test () {
+      this.value = "2018-08-05";
+    },
+    test1 () {
+      this.dateRange = [ "2019-12-12", "2020-12-12" ];
+    },
+    onInput (data) {
+      console.log("input 事件：");
+      console.log(data);
+    },
     onChange (data) {
+      console.log("change 事件：");
       console.log(data);
     }
   }
