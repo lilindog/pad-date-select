@@ -120,7 +120,7 @@ export default {
       const y = this.y, m = this.m, d = this.d;
       this.generateDefaultDate();
       if (y !== this.y || m !== this.m || d !== this.d) {
-        this.moveToCurrentDate();
+        this.init();
       }
     },
     dateRange: "init"

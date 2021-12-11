@@ -24,7 +24,7 @@ export default {
   data () {
     return {
       value: "",
-      dateRange: ["2018-01-01", "2022-12-12"],
+      dateRange: ["2018-01-01", "2018-1-1"],
       visable: !false
     }
   },
